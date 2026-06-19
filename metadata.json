@@ -1,0 +1,6 @@
+{
+  "name": "Vigilor OS",
+  "description": "An intelligent hospital operating system that optimizes patient triage, bed flow, capacity planning, and resource allocation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
