@@ -24,18 +24,17 @@ export default function PatientsPage() {
   }, []);
 
   const handleCreate = async (patient: Omit<Patient, "id" | "createdAt">) => {
-  console.log("handleCreate called", patient);
+    console.log("handleCreate called", patient);
 
-  const created = await patientService.create(patient);
+    const created = await patientService.create(patient);
 
-  console.log("Created patient:", created);
+    console.log("Created patient:", created);
 
-  setPatients((current) => [created, ...current]);
-};
+    setPatients((current) => [created, ...current]);
   };
 
   const handleUpdate = async () => {
-  alert("Update feature coming soon");
+    alert("Update feature coming soon");
   };
 
   const handleDelete = async (id: string) => {

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { Bed, Patient } from "./types";
+import { useAuth, type Role } from "./context/AuthContext";
+import LoginPage from "./pages/LoginPage";
 import { 
   Building, 
   Search, 
@@ -33,9 +35,46 @@ import HospitalFinance from "./components/HospitalFinance";
 import DoctorsPage from "./pages/DoctorsPage";
 import { useHospital } from "./context/HospitalContext";
 
+type ActiveTab = "command" | "consult" | "abdm" | "pharmacy" | "triage" | "lab" | "pharmacy-pos" | "finance" | "doctors";
+
+const roleTabAccess: Record<Exclude<Role, null>, ActiveTab[]> = {
+  admin: ["command", "consult", "abdm", "pharmacy", "triage", "lab", "pharmacy-pos", "finance", "doctors"],
+  receptionist: ["triage"],
+  doctor: ["consult"],
+  lab: ["lab"],
+  pharmacy: ["pharmacy-pos"],
+  finance: ["finance"],
+};
+
+const RECEPTION_TAB: ActiveTab = "triage";
+
+const getAllowedTabs = (role: Role): ActiveTab[] => {
+  if (!role) return [];
+  const normalizedRole = role.toLowerCase() as Exclude<Role, null>;
+  return roleTabAccess[normalizedRole] ?? [];
+};
+
+const getDefaultAllowedTab = (role: Role): ActiveTab => {
+  const allowedTabs = getAllowedTabs(role);
+  if (allowedTabs.length > 0) {
+    return allowedTabs[0];
+  }
+  if (role?.toLowerCase() === "admin") {
+    return RECEPTION_TAB;
+  }
+  return RECEPTION_TAB;
+};
+
+const hasAccessToTab = (role: Role, tab: ActiveTab): boolean => {
+  if (!role) return false;
+  if (role.toLowerCase() === "admin") return true;
+  return getAllowedTabs(role).includes(tab);
+};
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"command" | "consult" | "abdm" | "pharmacy" | "triage" | "lab" | "pharmacy-pos" | "finance" | "doctors">("triage");
-  
+  const [activeTab, setActiveTab] = useState<ActiveTab>("triage");
+  const { session, role, loading: authLoading, signOut } = useAuth();
+
   const { 
     beds, 
     loading, 
@@ -51,6 +90,21 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [inspectedPatientBed, setInspectedPatientBed] = useState<Bed | null>(null);
+
+  useEffect(() => {
+    if (authLoading || !session || !role) return;
+    if (!hasAccessToTab(role, activeTab)) {
+      setActiveTab(getDefaultAllowedTab(role));
+    }
+  }, [authLoading, role, session, activeTab]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   // Dummy action since beds are in live memory state
   const fetchBeds = async () => {};
@@ -101,6 +155,49 @@ export default function App() {
   const totalBedsCount = beds.length;
   const currentOccPercentage = totalBedsCount > 0 ? ((occupiedCount / totalBedsCount) * 100).toFixed(1) : "0.0";
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] px-6">
+        <div className="rounded-3xl bg-white border border-slate-200 px-8 py-10 shadow-xl text-slate-700 text-center">
+          <p className="text-sm font-semibold">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage />;
+  }
+
+  const allowedTabs = getAllowedTabs(role);
+
+  if (!hasAccessToTab(role, activeTab)) {
+    const fallbackTab = role ? getDefaultAllowedTab(role) : RECEPTION_TAB;
+    const canUseFallback = role ? hasAccessToTab(role, fallbackTab) : false;
+
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center px-4 py-12">
+        <div className="max-w-xl w-full rounded-[32px] border border-slate-200 bg-white p-12 text-center shadow-xl">
+          <h1 className="text-3xl font-bold text-slate-900">Access Denied</h1>
+          <p className="mt-4 text-sm text-slate-600">
+            {!role
+              ? "Your account does not have an assigned role. Contact an administrator."
+              : "You do not have permission to view this section."}
+          </p>
+          {canUseFallback && (
+            <button
+              type="button"
+              onClick={() => setActiveTab(fallbackTab)}
+              className="mt-6 rounded-3xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              Go to allowed page
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Search matches for global patient bar dropdown
   const searchMatches = beds.filter(b => {
     if (!b.occupied || !b.patient) return false;
@@ -134,104 +231,122 @@ export default function App() {
           {/* Navigation Controls */}
           <nav className="space-y-1 font-sans text-xs font-semibold tracking-wide">
             
-            <button
-              onClick={() => setActiveTab("triage")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "triage" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-triage" className="flex items-center gap-3">
-                <Activity className={`w-4 h-4 ${activeTab === "triage" ? "text-blue-600" : "text-slate-400"}`} />
-                Reception Desk
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "triage" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>Intake</span>
-            </button>
+              {allowedTabs.includes("triage") && (
+              <button
+                onClick={() => setActiveTab("triage")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "triage" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-triage" className="flex items-center gap-3">
+                  <Activity className={`w-4 h-4 ${activeTab === "triage" ? "text-blue-600" : "text-slate-400"}`} />
+                  Reception Desk
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "triage" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>Intake</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("command")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "command" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-command" className="flex items-center gap-3">
-                <Sliders className={`w-4 h-4 ${activeTab === "command" ? "text-blue-600" : "text-slate-400"}`} />
-                Bed Capacity
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "command" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>Beds</span>
-            </button>
+            {allowedTabs.includes("command") && (
+              <button
+                onClick={() => setActiveTab("command")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "command" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-command" className="flex items-center gap-3">
+                  <Sliders className={`w-4 h-4 ${activeTab === "command" ? "text-blue-600" : "text-slate-400"}`} />
+                  Bed Capacity
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "command" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>Beds</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("consult")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "consult" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-consult" className="flex items-center gap-3">
-                <FileText className={`w-4 h-4 ${activeTab === "consult" ? "text-blue-600" : "text-slate-400"}`} />
-                Doctor's Portal
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "consult" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>ROUNDS</span>
-            </button>
+            {allowedTabs.includes("consult") && (
+              <button
+                onClick={() => setActiveTab("consult")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "consult" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-consult" className="flex items-center gap-3">
+                  <FileText className={`w-4 h-4 ${activeTab === "consult" ? "text-blue-600" : "text-slate-400"}`} />
+                  Doctor's Portal
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "consult" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>ROUNDS</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("lab")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "lab" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-lab" className="flex items-center gap-3">
-                <FlaskConical className={`w-4 h-4 ${activeTab === "lab" ? "text-blue-600" : "text-slate-400"}`} />
-                Diagnostic Lab
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "lab" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>Testing</span>
-            </button>
+            {allowedTabs.includes("lab") && (
+              <button
+                onClick={() => setActiveTab("lab")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "lab" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-lab" className="flex items-center gap-3">
+                  <FlaskConical className={`w-4 h-4 ${activeTab === "lab" ? "text-blue-600" : "text-slate-400"}`} />
+                  Diagnostic Lab
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "lab" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>Testing</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("pharmacy-pos")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "pharmacy-pos" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-pharmacy-pos" className="flex items-center gap-3">
-                <Calculator className={`w-4 h-4 ${activeTab === "pharmacy-pos" ? "text-blue-600" : "text-slate-400"}`} />
-                Pharmacy Desk
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "pharmacy-pos" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500"}`}>POS BILLS</span>
-            </button>
+            {allowedTabs.includes("pharmacy-pos") && (
+              <button
+                onClick={() => setActiveTab("pharmacy-pos")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "pharmacy-pos" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-pharmacy-pos" className="flex items-center gap-3">
+                  <Calculator className={`w-4 h-4 ${activeTab === "pharmacy-pos" ? "text-blue-600" : "text-slate-400"}`} />
+                  Pharmacy Desk
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "pharmacy-pos" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500"}`}>POS BILLS</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("pharmacy")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "pharmacy" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-pharmacy" className="flex items-center gap-3">
-                <ShoppingBag className={`w-4 h-4 ${activeTab === "pharmacy" ? "text-blue-600" : "text-slate-400"}`} />
-                Pharmacy Intel
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "pharmacy" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500"}`}>METRICS</span>
-            </button>
+            {allowedTabs.includes("pharmacy") && (
+              <button
+                onClick={() => setActiveTab("pharmacy")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "pharmacy" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-pharmacy" className="flex items-center gap-3">
+                  <ShoppingBag className={`w-4 h-4 ${activeTab === "pharmacy" ? "text-blue-600" : "text-slate-400"}`} />
+                  Pharmacy Intel
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "pharmacy" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500"}`}>METRICS</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("doctors")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "doctors" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span className="flex items-center gap-3">
-                <ShieldCheck className={`w-4 h-4 ${activeTab === "doctors" ? "text-blue-600" : "text-slate-400"}`} />
-                Doctors
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "doctors" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>STAFF</span>
-            </button>
+            {allowedTabs.includes("doctors") && (
+              <button
+                onClick={() => setActiveTab("doctors")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "doctors" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span className="flex items-center gap-3">
+                  <ShieldCheck className={`w-4 h-4 ${activeTab === "doctors" ? "text-blue-600" : "text-slate-400"}`} />
+                  Doctors
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "doctors" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>STAFF</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("abdm")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "abdm" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-abdm" className="flex items-center gap-3">
-                <Layers className={`w-4 h-4 ${activeTab === "abdm" ? "text-blue-600" : "text-slate-400"}`} />
-                ABDM Sandbox
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "abdm" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>M1-M3</span>
-            </button>
+            {allowedTabs.includes("abdm") && (
+              <button
+                onClick={() => setActiveTab("abdm")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "abdm" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-abdm" className="flex items-center gap-3">
+                  <Layers className={`w-4 h-4 ${activeTab === "abdm" ? "text-blue-600" : "text-slate-400"}`} />
+                  ABDM Sandbox
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "abdm" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>M1-M3</span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("finance")}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "finance" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
-            >
-              <span id="nav-finance" className="flex items-center gap-3">
-                <TrendingUp className={`w-4 h-4 ${activeTab === "finance" ? "text-blue-600" : "text-slate-400"}`} />
-                Hospital Finance
-              </span>
-              <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "finance" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>AUDIT</span>
-            </button>
+            {allowedTabs.includes("finance") && (
+              <button
+                onClick={() => setActiveTab("finance")}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition ${activeTab === "finance" ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:text-slate-950 hover:bg-slate-50"}`}
+              >
+                <span id="nav-finance" className="flex items-center gap-3">
+                  <TrendingUp className={`w-4 h-4 ${activeTab === "finance" ? "text-blue-600" : "text-slate-400"}`} />
+                  Hospital Finance
+                </span>
+                <span className={`px-1.5 py-0.5 text-[8px] uppercase rounded font-mono font-bold ${activeTab === "finance" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500"}`}>AUDIT</span>
+              </button>
+            )}
 
           </nav>
         </div>
@@ -318,6 +433,12 @@ export default function App() {
             <span className="hidden sm:inline-block text-xs font-sans text-slate-500">
               Apollo Indraprastha • Bed Occupancy <strong className="text-blue-700 bg-blue-50 px-2 py-0.5 border border-blue-100 rounded-lg ml-1 font-mono">{currentOccPercentage}%</strong>
             </span>
+            <button
+              onClick={handleLogout}
+              className="rounded-2xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition"
+            >
+              Logout
+            </button>
             <div className="relative">
               <button 
                 onClick={() => {
