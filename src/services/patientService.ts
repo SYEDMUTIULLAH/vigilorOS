@@ -3,14 +3,19 @@ import { supabase } from "../lib/supabase";
 
 export const patientService = {
   getAll: async (): Promise<Patient[]> => {
-    const { data, error } = await supabase
+    console.log("REQUEST START", "patients", "getAll");
+    const result = await supabase
       .from("patients")
       .select("*")
       .order("created_at", { ascending: false });
+    console.log("REQUEST END", "patients", "getAll", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
 
-    return data.map((p) => ({
+    return result.data.map((p) => ({
       id: p.id,
       mrn: p.mrn,
       fullName: p.full_name,
@@ -26,7 +31,8 @@ export const patientService = {
   create: async (
     payload: Omit<Patient, "id" | "createdAt">
   ): Promise<Patient> => {
-    const { data, error } = await supabase
+    console.log("REQUEST START", "patients", "create", payload);
+    const result = await supabase
       .from("patients")
       .insert({
         mrn: payload.mrn,
@@ -39,19 +45,23 @@ export const patientService = {
       })
       .select()
       .single();
+    console.log("REQUEST END", "patients", "create", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
 
     return {
-      id: data.id,
-      mrn: data.mrn,
-      fullName: data.full_name,
-      age: data.age,
-      gender: data.gender,
-      phone: data.phone,
-      address: data.address,
+      id: result.data.id,
+      mrn: result.data.mrn,
+      fullName: result.data.full_name,
+      age: result.data.age,
+      gender: result.data.gender,
+      phone: result.data.phone,
+      address: result.data.address,
 
-      createdAt: data.created_at,
+      createdAt: result.data.created_at,
     };
   },
 
@@ -68,45 +78,59 @@ export const patientService = {
     if (updates.phone !== undefined) payload.phone = updates.phone;
     if (updates.address !== undefined) payload.address = updates.address;
 
-
-
-    const { data, error } = await supabase
+    console.log("REQUEST START", "patients", "update", { id, updates });
+    const result = await supabase
       .from("patients")
       .update(payload)
       .eq("id", id)
       .select()
       .single();
+    console.log("REQUEST END", "patients", "update", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
+    if (!result.data) throw new Error("Failed to update patient.");
 
     return {
-      id: data.id,
-      mrn: data.mrn,
-      fullName: data.full_name,
-      age: data.age,
-      gender: data.gender,
-      phone: data.phone,
-      address: data.address,
+      id: result.data.id,
+      mrn: result.data.mrn,
+      fullName: result.data.full_name,
+      age: result.data.age,
+      gender: result.data.gender,
+      phone: result.data.phone,
+      address: result.data.address,
 
-      createdAt: data.created_at,
+      createdAt: result.data.created_at,
     };
   },
 
   remove: async (id: string): Promise<void> => {
-    const { error } = await supabase
+    console.log("REQUEST START", "patients", "remove", { id });
+    const result = await supabase
       .from("patients")
       .delete()
       .eq("id", id);
+    console.log("REQUEST END", "patients", "remove", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
   },
 
   delete: async (id: string): Promise<void> => {
-    const { error } = await supabase
+    console.log("REQUEST START", "patients", "delete", { id });
+    const result = await supabase
       .from("patients")
       .delete()
       .eq("id", id);
+    console.log("REQUEST END", "patients", "delete", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
   },
 };

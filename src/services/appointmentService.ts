@@ -43,20 +43,26 @@ const buildDateTime = (appointmentDate: string, appointmentTime: string): string
 
 export const appointmentService = {
   getAll: async (): Promise<Appointment[]> => {
-    const { data, error } = await supabase
-      .from<AppointmentRow>("appointments")
+    console.log("REQUEST START", "appointments", "getAll");
+    const result = await supabase
+      .from("appointments")
       .select("id, patient_id, doctor_id, date_time, status, created_at")
       .order("created_at", { ascending: false });
+    console.log("REQUEST END", "appointments", "getAll", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
-    if (!data) return [];
+    if (result.error) throw result.error;
+    if (!result.data) return [];
 
-    return data.map(formatAppointment);
+    return result.data.map(formatAppointment);
   },
 
   create: async (payload: AppointmentPayload): Promise<Appointment> => {
-    const { data, error } = await supabase
-      .from<AppointmentRow>("appointments")
+    console.log("REQUEST START", "appointments", "create", payload);
+    const result = await supabase
+      .from("appointments")
       .insert({
         patient_id: payload.patientId,
         doctor_id: payload.doctorId,
@@ -65,11 +71,15 @@ export const appointmentService = {
       })
       .select("id, patient_id, doctor_id, date_time, status, created_at")
       .single();
+    console.log("REQUEST END", "appointments", "create", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
-    if (!data) throw new Error("Failed to create appointment.");
+    if (result.error) throw result.error;
+    if (!result.data) throw new Error("Failed to create appointment.");
 
-    return formatAppointment(data);
+    return formatAppointment(result.data);
   },
 
   update: async (
@@ -83,52 +93,61 @@ export const appointmentService = {
     if (updates.status !== undefined) payload.status = updates.status;
 
     if (updates.appointmentDate !== undefined || updates.appointmentTime !== undefined) {
-      const { data: existing, error: existingError } = await supabase
-        .from<Pick<AppointmentRow, "date_time">>("appointments")
+      console.log("REQUEST START", "appointments", "fetchExisting", { id });
+      const existingResult = await supabase
+        .from("appointments")
         .select("date_time")
         .eq("id", id)
         .single();
-
-      if (existingError) throw existingError;
-      if (!existing) throw new Error(`Appointment not found: ${id}`);
-
-      const currentDateTime = new Date(existing.date_time);
-      if (Number.isNaN(currentDateTime.getTime())) {
-        throw new Error(`Invalid existing appointment date_time: ${existing.date_time}`);
-      }
-
-      const currentDate = currentDateTime.toLocaleDateString("en-CA");
-      const currentTime = currentDateTime.toLocaleTimeString("en-GB", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
+      console.log("REQUEST END", "appointments", "fetchExisting", {
+        data: existingResult.data,
+        error: existingResult.error,
       });
 
-      payload.date_time = buildDateTime(
-        updates.appointmentDate ?? currentDate,
-        updates.appointmentTime ?? currentTime
-      );
+      if (existingResult.error) throw existingResult.error;
+      if (!existingResult.data) throw new Error(`Appointment not found: ${id}`);
+
+      const currentDateTime = new Date(existingResult.data.date_time);
+      if (Number.isNaN(currentDateTime.getTime())) {
+        throw new Error(`Invalid existing appointment date_time: ${existingResult.data.date_time}`);
+      }
+
+      const currentDate = currentDateTime.toISOString().slice(0, 10);
+      const currentTime = currentDateTime.toISOString().slice(11, 16);
+      const appointmentDate = updates.appointmentDate ?? currentDate;
+      const appointmentTime = updates.appointmentTime ?? currentTime;
+      payload.date_time = buildDateTime(appointmentDate, appointmentTime);
     }
 
-    const { data, error } = await supabase
-      .from<AppointmentRow>("appointments")
+    console.log("REQUEST START", "appointments", "update", { id, payload });
+    const result = await supabase
+      .from("appointments")
       .update(payload)
       .eq("id", id)
       .select("id, patient_id, doctor_id, date_time, status, created_at")
       .single();
+    console.log("REQUEST END", "appointments", "update", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
-    if (!data) throw new Error("Failed to update appointment.");
+    if (result.error) throw result.error;
+    if (!result.data) throw new Error("Failed to update appointment.");
 
-    return formatAppointment(data);
+    return formatAppointment(result.data);
   },
 
   remove: async (id: string): Promise<void> => {
-    const { error } = await supabase
+    console.log("REQUEST START", "appointments", "remove", { id });
+    const result = await supabase
       .from("appointments")
       .delete()
       .eq("id", id);
+    console.log("REQUEST END", "appointments", "remove", {
+      data: result.data,
+      error: result.error,
+    });
 
-    if (error) throw error;
+    if (result.error) throw result.error;
   },
 };
